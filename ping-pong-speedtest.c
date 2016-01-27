@@ -13,8 +13,9 @@
 #include <string.h>
 #include <error.h>
 #include <errno.h>
+#include <unistd.h>
 
-unsigned short port  = 80;
+unsigned short port  = 12345;
 const char*    ip    = "127.0.0.1";
 
 static void
@@ -73,21 +74,21 @@ main(int argc, char * argv[])
         exit(1);
     }
 
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == -1) {
-        printf("socket() failed: (errno=%i) %s\n", errno, strerror(errno));
-        exit(1);
-    }
-
-    set_socket_options(sock);
-
-    struct sockaddr_in addr;
-    memset(&addr, '\0', sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = inet_addr(ip);
-
     if (argv[1][0] == 's') { // Server
+        int sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (sock == -1) {
+            printf("socket() failed: (errno=%i) %s\n", errno, strerror(errno));
+            exit(1);
+        }
+
+        set_socket_options(sock);
+
+        struct sockaddr_in addr;
+        memset(&addr, '\0', sizeof(addr));
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        addr.sin_addr.s_addr = inet_addr(ip);
+
         printf("Server mode\n");
         message = "Pong";
         if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
@@ -95,21 +96,22 @@ main(int argc, char * argv[])
             return 1;
         }
         printf("Bound\n");
-        if (listen(sock, 1) != 0) {
+        if (listen(sock, 10) != 0) {
             printf("listen() failed: (errno=%i) %s\n", errno, strerror(errno));
             exit(1);
         }
         printf("Listening\n");
-        struct sockaddr_in new_addr;
-        socklen_t new_addr_size = sizeof(new_addr);
-        int new_sock = accept(sock, (struct sockaddr *)&new_addr, &new_addr_size);
-        if (new_sock == -1) {
-            printf("accept() failed: (errno=%i) %s\n", errno, strerror(errno));
-            exit(1);
-        }
-        printf("Accepted\n");
 
         while (1) {
+            struct sockaddr_in new_addr;
+            socklen_t new_addr_size = sizeof(new_addr);
+            int new_sock = accept(sock, (struct sockaddr *)&new_addr, &new_addr_size);
+            if (new_sock == -1) {
+                printf("accept() failed: (errno=%i) %s\n", errno, strerror(errno));
+                exit(1);
+            }
+            //printf("Accepted\n");
+
             int length = recv(new_sock, buf, sizeof(buf), 0);
             if (length != (int)strlen(message)) {
                 printf("recv() failed!\n");
@@ -119,18 +121,34 @@ main(int argc, char * argv[])
                 printf("send(): Error writing to socket: (errno=%i) %s\n", errno, strerror(errno));
             }
             tick();
+            close(new_sock);
         }
     } else { // Client
         printf("Client mode\n");
         message = "Ping";
-        if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-            printf("connect(): failed (errno=%i) %s, addr=%s:%u\n", errno, strerror(errno), inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
-            return 1;
-        }
-        printf("Connected\n");
 
-        // The client starts the ping-pong
         while (1) {
+            int sock = socket(AF_INET, SOCK_STREAM, 0);
+            if (sock == -1) {
+                printf("socket() failed: (errno=%i) %s\n", errno, strerror(errno));
+                exit(1);
+            }
+
+            set_socket_options(sock);
+
+            struct sockaddr_in addr;
+            memset(&addr, '\0', sizeof(addr));
+            addr.sin_family = AF_INET;
+            addr.sin_port = htons(port);
+            addr.sin_addr.s_addr = inet_addr(ip);
+
+            if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+                printf("connect(): failed (errno=%i) %s, addr=%s:%u\n", errno, strerror(errno), inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+                return 1;
+            }
+            // printf("Connected\n");
+
+            // The client starts the ping-pong
             if (send(sock, message, strlen(message), MSG_NOSIGNAL) != (int)strlen(message)) {
                 printf("send(): Error writing to socket: (errno=%i) %s\n", errno, strerror(errno));
             }
@@ -140,6 +158,7 @@ main(int argc, char * argv[])
                 exit(1);
             } 
             tick();
+            close(sock);
         }
     }
 
